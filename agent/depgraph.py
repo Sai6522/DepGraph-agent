@@ -13,30 +13,21 @@ import os
 import re
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from neo4j_graphrag.llm import VertexAILLM
-from neo4j_graphrag.embeddings import VertexAIEmbeddings
+from neo4j_graphrag.llm import OllamaLLM
+from neo4j_graphrag.embeddings import OllamaEmbeddings
 from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
-from vertexai.generative_models import GenerationConfig
-import vertexai
 
 load_dotenv()
 
-# ── VertexAI init ─────────────────────────────────────────────────────────────
-vertexai.init(
-    project=os.environ["GOOGLE_CLOUD_PROJECT"],
-    location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
-)
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # ── connections ───────────────────────────────────────────────────────────────
 driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-llm = VertexAILLM(
-    model_name="gemini-2.0-flash",
-    generation_config=GenerationConfig(temperature=0.0),
-)
-embedder = VertexAIEmbeddings(model="text-embedding-005")
+llm = OllamaLLM(model_name="llama3.2", host=OLLAMA_HOST)
+embedder = OllamaEmbeddings(model="nomic-embed-text", ollama_host=OLLAMA_HOST)
 
 # ── system prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are DepGraph, a software supply chain security assistant.

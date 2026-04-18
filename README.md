@@ -80,14 +80,20 @@ In [console.neo4j.io](https://console.neo4j.io) → Organization Settings:
 - Security → **Tool authentication** ON
 - Confirm your project role is **Project Admin**
 
-### 2. Install
+### 2. Install Ollama and pull models (free, local)
+
+```bash
+# Install Ollama: https://ollama.com/download
+ollama pull llama3.2          # LLM (~2GB)
+ollama pull nomic-embed-text  # embeddings (~274MB)
+```
+
+### 3. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # fill in your Aura + GCP credentials
+cp .env.example .env   # only Neo4j credentials needed, no API keys
 ```
-
-> **GCP auth:** Run `gcloud auth application-default login` so VertexAI can authenticate, or set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key path.
 
 ### 3. Fetch data
 
@@ -133,8 +139,9 @@ depgraph/
 
 - **Neo4j Aura Free** — managed graph database
 - **neo4j-graphrag** — Text2Cypher + VectorRetriever
-- **Google Gemini 2.0 Flash** (VertexAI) — LLM for answer synthesis and Text2Cypher
-- **text-embedding-005** (VertexAI) — 768-dim embeddings for vulnerability similarity search
+- **Ollama** — local, free, no API key required
+  - `llama3.2` — LLM for answer synthesis and Text2Cypher
+  - `nomic-embed-text` — 768-dim embeddings for vulnerability similarity search
 - **OSV API** — real-world vulnerability data
 - **PyPI API** — live dependency graph
 - **Streamlit** — chat UI

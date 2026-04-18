@@ -8,23 +8,19 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from neo4j_graphrag.embeddings import VertexAIEmbeddings
-import vertexai
+from neo4j_graphrag.embeddings import OllamaEmbeddings
 
 load_dotenv()
 
-vertexai.init(
-    project=os.environ["GOOGLE_CLOUD_PROJECT"],
-    location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
-)
-
 DATA_DIR = Path(__file__).parent.parent / "data"
+
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-embedder = VertexAIEmbeddings(model="text-embedding-005")
+embedder = OllamaEmbeddings(model="nomic-embed-text", ollama_host=OLLAMA_HOST)
 
 
 def get_embedding(text: str) -> list[float]:
