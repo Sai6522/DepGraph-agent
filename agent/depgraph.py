@@ -19,6 +19,14 @@ from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
 
 load_dotenv()
 
+# Support Streamlit Cloud secrets
+try:
+    import streamlit as st
+    for k, v in st.secrets.items():
+        os.environ.setdefault(k, v)
+except Exception:
+    pass
+
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 _groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
