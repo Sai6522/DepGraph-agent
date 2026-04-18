@@ -19,11 +19,12 @@ from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
 
 load_dotenv()
 
-# Support Streamlit Cloud secrets
+# Load Streamlit Cloud secrets into env before any os.environ access
 try:
     import streamlit as st
-    for k, v in st.secrets.items():
-        os.environ.setdefault(k, v)
+    for k, v in st.secrets.to_dict().items():
+        if isinstance(v, str):
+            os.environ.setdefault(k, v)
 except Exception:
     pass
 
