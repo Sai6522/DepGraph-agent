@@ -2,6 +2,8 @@
 
 > *"Which of my packages are affected by this CVE — and through how many hops?"*
 
+🚀 **Live Demo:** [sai6522-depgraph-agent-uiapp-wfcewa.streamlit.app](https://sai6522-depgraph-agent-uiapp-wfcewa.streamlit.app/)
+
 DepGraph Agent turns your PyPI dependency tree into a knowledge graph that reasons about supply chain security. It answers questions no flat database can: "What's the blast radius of werkzeug?" "Why is my app exposed to CVE-2023-25577?" "How does a vulnerability in a low-level library propagate up to my top-level packages?"
 
 PyPI packages have hundreds of transitive dependencies, but most tools only show you direct CVEs. You can see *what* is vulnerable — never *why your app is affected*. DepGraph connects the dots by building a graph where packages, their dependency relationships, and known OSV vulnerabilities are linked through explicit edges. The agent then uses multi-hop graph reasoning to trace propagation paths that are invisible in flat dashboards.
