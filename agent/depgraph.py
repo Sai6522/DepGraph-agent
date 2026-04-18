@@ -19,17 +19,15 @@ from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
 
 load_dotenv()
 
-# Load Streamlit Cloud secrets into env before any os.environ access
-try:
-    import streamlit as st
-    for k, v in st.secrets.to_dict().items():
-        if isinstance(v, str):
-            os.environ.setdefault(k, v)
-except Exception:
-    pass
-
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-_groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+def _get_env(key: str) -> str:
+    # Try os.environ first (local .env), then Streamlit secrets
+    if key in os.environ:
+        return os.environ[key]
+    try:
+        import streamlit as st
+        return st.secrets[key]
+    except Exception:
+        raise KeyError(f"Missing required config: {key}")
 
 # ── Groq LLM wrapper ──────────────────────────────────────────────────────────
 class GroqLLM(LLMInterface):
@@ -38,7 +36,8 @@ class GroqLLM(LLMInterface):
         self.model_name = model_name
 
     def invoke(self, input: str, **kwargs) -> LLMResponse:
-        response = _groq_client.chat.completions.create(
+        client = Groq(api_key=_get_env("GROQ_API_KEY"))
+        response = client.chat.completions.create(
             model=self.model_name,
             messages=[{"role": "user", "content": input}],
         )
@@ -54,17 +53,46 @@ class GeminiEmbedder(Embedder):
         self.model = model
 
     def embed_query(self, text: str) -> list[float]:
+        genai.configure(api_key=_get_env("GEMINI_API_KEY"))
         result = genai.embed_content(model=self.model, content=text[:2000])
         return result["embedding"]
 
 
-# ── connections ───────────────────────────────────────────────────────────────
-driver = GraphDatabase.driver(
-    os.environ["NEO4J_URI"],
-    auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
-)
-llm = GroqLLM()
-embedder = GeminiEmbedder()
+# ── lazy-initialized globals ──────────────────────────────────────────────────
+_driver = None
+_llm = None
+_embedder = None
+_t2c = None
+_vector = None
+
+def _init():
+    global _driver, _llm, _embedder, _t2c, _vector
+    if _driver is not None:
+        return
+    genai.configure(api_key=_get_env("GEMINI_API_KEY"))
+    _driver = GraphDatabase.driver(
+        _get_env("NEO4J_URI"),
+        auth=(_get_env("NEO4J_USERNAME"), _get_env("NEO4J_PASSWORD")),
+    )
+    _llm = GroqLLM()
+    _embedder = GeminiEmbedder()
+    _t2c = Text2CypherRetriever(
+        driver=_driver,
+        llm=_llm,
+        neo4j_schema="""
+            Node labels: Package, Vulnerability
+            Relationships: (Package)-[:DEPENDS_ON]->(Package), (Package)-[:HAS_VULNERABILITY]->(Vulnerability)
+            Package properties: name (string), version (string), summary (string)
+            Vulnerability properties: id (string), summary (string), severity (string), published (string)
+            Severity values: CRITICAL, HIGH, MODERATE, LOW, UNKNOWN
+        """,
+    )
+    _vector = VectorRetriever(
+        driver=_driver,
+        index_name="vuln_embeddings",
+        embedder=_embedder,
+        return_properties=["id", "summary", "severity"],
+    )
 
 # ── system prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are DepGraph, a software supply chain security assistant.
@@ -154,40 +182,26 @@ CYPHER_TEMPLATES = {
 
 
 def cypher_template(template_name: str, **params) -> list[dict]:
+    _init()
     query = CYPHER_TEMPLATES[template_name]
-    with driver.session() as session:
+    with _driver.session() as session:
         return [dict(r) for r in session.run(query, **params)]
 
 
 # ── tool 2: text2cypher ───────────────────────────────────────────────────────
-_t2c = Text2CypherRetriever(
-    driver=driver,
-    llm=llm,
-    neo4j_schema="""
-        Node labels: Package, Vulnerability
-        Relationships: (Package)-[:DEPENDS_ON]->(Package), (Package)-[:HAS_VULNERABILITY]->(Vulnerability)
-        Package properties: name (string), version (string), summary (string)
-        Vulnerability properties: id (string), summary (string), severity (string), published (string)
-        Severity values: CRITICAL, HIGH, MODERATE, LOW, UNKNOWN
-    """,
-)
 
 
 def text2cypher(question: str) -> list:
+    _init()
     result = _t2c.search(query_text=question)
     return [item.content for item in result.items]
 
 
 # ── tool 3: similarity search ─────────────────────────────────────────────────
-_vector = VectorRetriever(
-    driver=driver,
-    index_name="vuln_embeddings",
-    embedder=embedder,
-    return_properties=["id", "summary", "severity"],
-)
 
 
 def similarity_search(description: str, top_k: int = 7) -> list:
+    _init()
     result = _vector.search(query_text=description, top_k=top_k)
     return [item.content for item in result.items]
 
@@ -226,6 +240,7 @@ def _route(question: str) -> tuple[str, list]:
 
 # ── public interface ──────────────────────────────────────────────────────────
 def ask(question: str) -> str:
+    _init()
     tool_used, context_items = _route(question)
     context = "\n".join(str(item) for item in context_items[:12])
 
@@ -236,4 +251,4 @@ def ask(question: str) -> str:
         f"Graph data:\n{context}\n\n"
         f"Question: {question}\n\nAnswer:"
     )
-    return llm.invoke(prompt).content
+    return _llm.invoke(prompt).content
