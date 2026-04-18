@@ -1,45 +1,34 @@
-# DepGraph Agent
+# DepGraph Agent — Hackathon Submission
 
 ## What it does
 
-DepGraph is a supply chain security agent that traces **vulnerability propagation through PyPI dependency chains** using a Neo4j knowledge graph.
+DepGraph Agent turns your PyPI dependency tree into a knowledge graph that reasons about supply chain security. It answers questions no health app — sorry, no *security tool* — can: "What's the blast radius of werkzeug?" "Why is my app exposed to this CVE?" "How does a vulnerability in a low-level library propagate up through 4 hops to my top-level packages?"
 
-It answers questions no flat database can:
-
-- **"Is flask vulnerable?"** → direct CVE lookup via graph traversal
-- **"What's the blast radius of werkzeug?"** → finds every package that transitively depends on werkzeug (up to 4 hops) and is also vulnerable
-- **"Show the dependency path from flask to markupsafe"** → shortest path across `DEPENDS_ON` edges
-- **"Which packages have the most CVEs?"** → aggregation over `HAS_VULNERABILITY` relationships
-- **"Find vulnerabilities similar to remote code execution via deserialization"** → vector similarity search on OSV vuln summaries
-
-The agent always explains *why* using the graph path — not just the result. Example response:
-
-> *"Flask is transitively exposed: flask → werkzeug 2.1.0 → CVE-2023-25577 (HIGH severity, path injection). This is a 1-hop dependency chain. Werkzeug also carries 3 additional MODERATE vulnerabilities affecting the same version range."*
+PyPI packages have hundreds of transitive dependencies, but most tools only show direct CVEs. You can see *what* is vulnerable — never *why your app is affected*. DepGraph connects the dots by building a graph where packages, dependency relationships, and known OSV vulnerabilities are linked through explicit edges. The agent uses multi-hop graph reasoning to trace propagation paths that are invisible in flat dashboards.
 
 ---
 
 ## Dataset and why a graph fits
 
-**Sources (both free, no signup):**
-- [PyPI JSON API](https://pypi.org/pypi/<pkg>/json) — live package metadata and dependency lists
-- [OSV API](https://api.osv.dev/v1/query) — real CVE/GHSA vulnerability data for PyPI packages
+**Dataset:** Two free public APIs — no Kaggle, no signup:
+- **PyPI JSON API** (`pypi.org/pypi/<pkg>/json`) — live package metadata and dependency lists
+- **OSV API** (`api.osv.dev/v1/query`) — real CVE/GHSA vulnerability data for PyPI packages
 
-25 seed packages (flask, django, requests, cryptography, pillow, urllib3, etc.) + their direct dependencies, yielding:
+25 seed packages (flask, django, requests, cryptography, pillow, urllib3, celery, etc.) + 1 hop of their dependencies → **269 packages, 801 real vulnerabilities**.
 
-- ~200+ `Package` nodes
-- ~300+ `Vulnerability` nodes (real OSV data)
-- ~500+ `DEPENDS_ON` edges
-- ~400+ `HAS_VULNERABILITY` edges
+**Why a graph fits — this is the key insight:**
 
-**Why a graph is the only way to solve this:**
-
-Dependency relationships *are* the data. The insight is never in a single node — it's in the chain:
+A table can tell you werkzeug has CVEs. Only a graph can tell you *why your app is affected*:
 
 ```
-your-app → flask → werkzeug → [CVE-2023-25577]
+(Package:flask)-[:DEPENDS_ON]->
+  (Package:werkzeug)-[:HAS_VULNERABILITY]->
+    (Vulnerability {id: "CVE-2023-25577", severity: "HIGH"})
 ```
 
-A SQL query for transitive exposure requires recursive CTEs that break at scale and can't explain the path. A graph traversal returns the full chain in milliseconds and makes the reasoning transparent. When Log4Shell dropped, teams needed to know their blast radius across 3–4 hops of transitive dependencies — that's a graph problem, not a table problem.
+That flask → werkzeug → CVE chain isn't visible in any dependency scanner's flat output. But in the graph, it's a two-hop traversal. The agent follows these relationship chains to explain *causality*, not just correlation.
+
+When Log4Shell dropped in 2021, teams needed to know their blast radius across 3–4 hops of transitive dependencies. That's a graph traversal problem. Recursive CTEs in SQL break at scale and can't explain the path. A graph returns the full chain in milliseconds and makes the reasoning transparent.
 
 **Graph schema:**
 ```
@@ -50,36 +39,53 @@ A SQL query for transitive exposure requires recursive CTEs that break at scale 
 (:Package)-[:HAS_VULNERABILITY]->(:Vulnerability)
 ```
 
----
-
-## Tools
-
-| Tool | Type | When used |
-|------|------|-----------|
-| `direct_vulns` | Cypher Template | "Is X vulnerable?" — direct `HAS_VULNERABILITY` lookup |
-| `blast_radius` | Cypher Template | "What's the blast radius of X?" — `DEPENDS_ON*1..4` traversal |
-| `dep_path` | Cypher Template | "Path from A to B?" — `shortestPath` across dependency edges |
-| `top_vulnerable` | Cypher Template | "Most vulnerable packages?" — aggregation query |
-| `ad_hoc_query` | Text2Cypher | Any question not covered by a template |
-| `vuln_similarity` | Similarity Search | "Find CVEs like [attack description]" — vector search on OSV summaries |
+Scale: 269 Package nodes, 801 Vulnerability nodes, 500+ `DEPENDS_ON` edges, 400+ `HAS_VULNERABILITY` edges. Small graph, rich reasoning.
 
 ---
 
-## Screenshot of agent in Aura Console
+## Agent tools
 
-> 📸 *[Insert screenshot of agent configuration in Data Services → Agents showing all 6 tools]*
+| Tool | Type | What it enables |
+|------|------|-----------------|
+| `direct_vulns` | Cypher Template | "Is flask vulnerable?" — direct `HAS_VULNERABILITY` lookup |
+| `blast_radius` | Cypher Template | "What's the blast radius of werkzeug?" — `DEPENDS_ON*1..4` traversal finding every upstream package that transitively depends on it AND carries CVEs |
+| `dep_path` | Cypher Template | "Path from flask to markupsafe?" — `shortestPath` across dependency edges |
+| `top_vulnerable` | Cypher Template | "Most vulnerable packages?" — aggregation over `HAS_VULNERABILITY` edges |
+| `text2cypher` | Text2Cypher | Any natural language question → LLM generates Cypher from the graph schema |
+| `similarity_search` | Similarity Search | "Find CVEs like remote code execution via deserialization" — vector search on OSV vuln embeddings |
 
 ---
 
-## Screenshot of agent in action
+## Example conversation
 
-> 📸 *[Insert screenshot of Streamlit UI showing a blast radius query response with dependency chain explanation]*
+**User:** "How does a vulnerability in werkzeug affect packages that depend on flask?"
+
+**Agent reasoning (multi-hop):**
+1. Matches `(werkzeug)-[:HAS_VULNERABILITY]->(v)` — finds 20 CVEs
+2. Follows `(upstream)-[:DEPENDS_ON*1..4]->(werkzeug)` — finds flask, starlette, and others
+3. Returns affected packages with hop count, vuln count, and sample CVEs
+4. LLM synthesizes the chain into a human explanation
+
+**Agent response:**
+> *Werkzeug 3.1.3 carries 20 known vulnerabilities including CVE-2023-25577 (HIGH — path injection) and CVE-2023-46136 (HIGH — DoS via multipart parsing). Flask directly depends on werkzeug (1 hop), meaning any application using flask is transitively exposed. The dependency chain is: your-app → flask → werkzeug → [CVE]. Starlette also has werkzeug in its dependency tree (2 hops) with 7 additional vulnerabilities in the chain.*
+
+This answer requires 3 hops through the graph. No flat database produces it.
 
 ---
 
-## Optional: Link to agent
+## What makes this different
 
-> 🔗 *[Insert MCP endpoint URL after enabling External access in Aura Console]*
+**1. The graph drives the insight, not just stores data.**
+Every answer traces a relationship path. "Your app is exposed because..." always cites the specific package → dependency → CVE chain. The reasoning is transparent — the agent shows which tool it used and what graph data it retrieved.
+
+**2. Real data, live APIs.**
+No synthetic datasets. Every vulnerability is pulled live from the OSV database. Every dependency edge is pulled live from PyPI. The graph reflects the actual state of the ecosystem today.
+
+**3. Semantic vulnerability search.**
+Vulnerability embeddings (3072-dim via Gemini) enable queries like "find CVEs similar to SQL injection in ORM layer" — matching by attack pattern, not CVE ID. This surfaces related vulnerabilities across different packages that keyword search misses entirely.
+
+**4. It solves a real problem for a real community.**
+Every Python developer has transitive dependencies they don't fully understand. DepGraph makes the hidden exposure visible and explainable — not just a list of CVEs, but the exact path through which each one reaches your code.
 
 ---
 
@@ -87,7 +93,7 @@ A SQL query for transitive exposure requires recursive CTEs that break at scale 
 
 - **Neo4j Aura Free** — managed graph database
 - **neo4j-graphrag** — Text2Cypher + VectorRetriever
-- **OpenAI** `text-embedding-3-small` — vulnerability embeddings
-- **OpenAI** `gpt-4o-mini` — answer synthesis
-- **Streamlit** — chat UI
+- **Groq** (`llama-3.3-70b-versatile`) — LLM, free tier (14,400 req/day)
+- **Google Gemini** (`gemini-embedding-001`, 3072-dim) — vulnerability embeddings
 - **OSV API + PyPI API** — live data, no Kaggle required
+- **Streamlit** — chat UI
