@@ -1,6 +1,7 @@
 # DepGraph Agent — Hackathon Submission
 
 🚀 **Live Demo:** [sai6522-depgraph-agent-uiapp-wfcewa.streamlit.app](https://sai6522-depgraph-agent-uiapp-wfcewa.streamlit.app/)
+📦 **GitHub:** [github.com/Sai6522/DepGraph-agent](https://github.com/Sai6522/DepGraph-agent)
 
 ## Screenshots
 
