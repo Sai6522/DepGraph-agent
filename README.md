@@ -84,8 +84,10 @@ In [console.neo4j.io](https://console.neo4j.io) → Organization Settings:
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # fill in your Aura + OpenAI credentials
+cp .env.example .env   # fill in your Aura + GCP credentials
 ```
+
+> **GCP auth:** Run `gcloud auth application-default login` so VertexAI can authenticate, or set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key path.
 
 ### 3. Fetch data
 
@@ -131,7 +133,8 @@ depgraph/
 
 - **Neo4j Aura Free** — managed graph database
 - **neo4j-graphrag** — Text2Cypher + VectorRetriever
-- **OpenAI** — `text-embedding-3-small` (embeddings), `gpt-4o-mini` (synthesis)
+- **Google Gemini 2.0 Flash** (VertexAI) — LLM for answer synthesis and Text2Cypher
+- **text-embedding-005** (VertexAI) — 768-dim embeddings for vulnerability similarity search
 - **OSV API** — real-world vulnerability data
 - **PyPI API** — live dependency graph
 - **Streamlit** — chat UI

@@ -1,6 +1,6 @@
-neo4j-graphrag[openai]
+neo4j-graphrag[google]
 neo4j
-openai
+google-cloud-aiplatform
 requests
 streamlit
 python-dotenv

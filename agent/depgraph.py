@@ -1,9 +1,11 @@
 """
 DepGraph Agent — OSV vulnerability propagation agent.
+LLM: Gemini 2.0 Flash (VertexAI)
+Embeddings: text-embedding-005 (VertexAI)
 
 Tools:
-  1. cypher_template  — direct vuln lookup + blast-radius traversal (fixed patterns)
-  2. text2cypher      — ad-hoc graph queries (fallback)
+  1. cypher_template   — direct vuln lookup + blast-radius traversal (fixed patterns)
+  2. text2cypher       — ad-hoc graph queries (fallback)
   3. similarity_search — find vulns by semantic description
 """
 
@@ -11,21 +13,30 @@ import os
 import re
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from neo4j_graphrag.llm import OpenAILLM
-from neo4j_graphrag.embeddings import OpenAIEmbeddings
+from neo4j_graphrag.llm import VertexAILLM
+from neo4j_graphrag.embeddings import VertexAIEmbeddings
 from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
-from openai import OpenAI
+from vertexai.generative_models import GenerationConfig
+import vertexai
 
 load_dotenv()
+
+# ── VertexAI init ─────────────────────────────────────────────────────────────
+vertexai.init(
+    project=os.environ["GOOGLE_CLOUD_PROJECT"],
+    location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+)
 
 # ── connections ───────────────────────────────────────────────────────────────
 driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-llm = OpenAILLM(model_name="gpt-4o-mini", model_params={"temperature": 0})
-embedder = OpenAIEmbeddings(model="text-embedding-3-small")
-openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+llm = VertexAILLM(
+    model_name="gemini-2.0-flash",
+    generation_config=GenerationConfig(temperature=0.0),
+)
+embedder = VertexAIEmbeddings(model="text-embedding-005")
 
 # ── system prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are DepGraph, a software supply chain security assistant.
@@ -76,7 +87,6 @@ TOOL_DESCRIPTIONS = {
 
 # ── tool 1: cypher templates ──────────────────────────────────────────────────
 CYPHER_TEMPLATES = {
-    # Direct vulnerabilities for a package
     "direct_vulns": """
         MATCH (p:Package {name: $package})-[:HAS_VULNERABILITY]->(v:Vulnerability)
         RETURN p.name AS package, p.version AS version,
@@ -84,7 +94,6 @@ CYPHER_TEMPLATES = {
         ORDER BY v.severity DESC
         LIMIT 20
     """,
-    # Blast radius: who depends on this package (transitively) and is also vulnerable?
     "blast_radius": """
         MATCH path = (upstream:Package)-[:DEPENDS_ON*1..4]->(p:Package {name: $package})
         WHERE (upstream)-[:HAS_VULNERABILITY]->()
@@ -98,7 +107,6 @@ CYPHER_TEMPLATES = {
         ORDER BY hops, vuln_count DESC
         LIMIT 30
     """,
-    # Shortest path between two packages
     "dep_path": """
         MATCH path = shortestPath(
             (a:Package {name: $from_pkg})-[:DEPENDS_ON*]->(b:Package {name: $to_pkg})
@@ -106,7 +114,6 @@ CYPHER_TEMPLATES = {
         RETURN [n IN nodes(path) | n.name] AS dependency_chain,
                length(path) AS hops
     """,
-    # Most vulnerable packages
     "top_vulnerable": """
         MATCH (p:Package)-[:HAS_VULNERABILITY]->(v:Vulnerability)
         RETURN p.name AS package, p.version AS version,
@@ -162,29 +169,24 @@ def similarity_search(description: str, top_k: int = 7) -> list:
 def _route(question: str) -> tuple[str, list]:
     q = question.lower()
 
-    # Similarity: attack pattern / vuln type description
     if re.search(r"\b(similar|like|type of|attack|pattern|rce|xss|sqli|injection|deserialization|overflow)\b", q):
         return "similarity_search", similarity_search(question)
 
-    # Blast radius
     if re.search(r"\b(blast radius|impact|affected by|propagat|downstream|who depends|which packages.*depend)\b", q):
         pkg = re.search(r"(?:of|on|by|in)\s+['\"]?([a-z0-9_\-\.]+)['\"]?", q)
         if pkg:
             return "blast_radius", cypher_template("blast_radius", package=pkg.group(1))
 
-    # Dep path between two packages
     path_match = re.search(
         r"(?:path|connect|how).*?['\"]?([a-z0-9_\-\.]+)['\"]?\s+(?:to|and|→)\s+['\"]?([a-z0-9_\-\.]+)['\"]?", q
     )
     if path_match:
         return "dep_path", cypher_template("dep_path", from_pkg=path_match.group(1), to_pkg=path_match.group(2))
 
-    # Top vulnerable
     if re.search(r"\b(most vulnerable|most cves|highest risk|top.*vuln|riskiest)\b", q):
         limit_m = re.search(r"\b(\d+)\b", q)
         return "top_vulnerable", cypher_template("top_vulnerable", limit=int(limit_m.group(1)) if limit_m else 10)
 
-    # Direct vuln lookup — extract package name
     pkg_match = re.search(
         r"(?:is\s+|does\s+|for\s+|in\s+|package\s+|vuln.*in\s+)['\"]?([a-z0-9_\-\.]+)['\"]?(?:\s+vuln|\s+safe|\s+affect|\s+cve|$|\?)",
         q,
@@ -192,7 +194,6 @@ def _route(question: str) -> tuple[str, list]:
     if pkg_match:
         return "direct_vulns", cypher_template("direct_vulns", package=pkg_match.group(1))
 
-    # Fallback
     return "text2cypher", text2cypher(question)
 
 
@@ -201,19 +202,12 @@ def ask(question: str) -> str:
     tool_used, context_items = _route(question)
     context = "\n".join(str(item) for item in context_items[:12])
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"Question: {question}\n\n"
-                f"Tool used: {tool_used}\n"
-                f"Tool purpose: {TOOL_DESCRIPTIONS[tool_used]}\n\n"
-                f"Graph data:\n{context}"
-            ),
-        },
-    ]
-    resp = openai_client.chat.completions.create(
-        model="gpt-4o-mini", messages=messages, temperature=0.3
+    prompt = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"Tool used: {tool_used}\n"
+        f"Tool purpose: {TOOL_DESCRIPTIONS[tool_used]}\n\n"
+        f"Graph data:\n{context}\n\n"
+        f"Question: {question}\n\nAnswer:"
     )
-    return resp.choices[0].message.content
+    response = llm.invoke(prompt)
+    return response.content

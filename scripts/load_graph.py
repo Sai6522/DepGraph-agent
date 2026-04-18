@@ -8,9 +8,15 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from openai import OpenAI
+from neo4j_graphrag.embeddings import VertexAIEmbeddings
+import vertexai
 
 load_dotenv()
+
+vertexai.init(
+    project=os.environ["GOOGLE_CLOUD_PROJECT"],
+    location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+)
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -18,12 +24,11 @@ driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+embedder = VertexAIEmbeddings(model="text-embedding-005")
 
 
 def get_embedding(text: str) -> list[float]:
-    r = openai_client.embeddings.create(model="text-embedding-3-small", input=text[:2000])
-    return r.data[0].embedding
+    return embedder.embed_query(text[:2000])
 
 
 def setup_schema(session):
@@ -32,7 +37,7 @@ def setup_schema(session):
     session.run("""
         CREATE VECTOR INDEX vuln_embeddings IF NOT EXISTS
         FOR (v:Vulnerability) ON (v.embedding)
-        OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}
+        OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}
     """)
 
 
