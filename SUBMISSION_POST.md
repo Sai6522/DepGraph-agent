@@ -5,17 +5,10 @@
 
 ## Screenshots
 
-### Agent in action — Streamlit UI
-![Streamlit UI](screenshots/Streamlit_Deployed_Page_Including_LLM.png)
-
-### Knowledge graph in Neo4j Aura Explore (830 nodes)
-![Aura Explore](screenshots/aura_Explore_Tool.png)
-
-### Graph schema in Aura Query Tool — 1,066 nodes · 1,829 relationships
-![Aura Query](screenshots/aura_Query_Tool.png)
-
-### Vulnerability timeline in Aura Dashboard
-![Aura Dashboard](screenshots/aura_Dashboards_Tool.png)
+- [Agent in action — Streamlit UI](screenshots/Streamlit_Deployed_Page_Including_LLM.png)
+- [Knowledge graph in Neo4j Aura Explore (830 nodes)](screenshots/aura_Explore_Tool.png)
+- [Graph schema in Aura Query Tool — 1,066 nodes · 1,829 relationships](screenshots/aura_Query_Tool.png)
+- [Vulnerability timeline in Aura Dashboard](screenshots/aura_Dashboards_Tool.png)
 
 ---
 

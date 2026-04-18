@@ -12,17 +12,10 @@ PyPI packages have hundreds of transitive dependencies, but most tools only show
 
 ## Screenshots
 
-### Streamlit Chat UI
-![Streamlit UI](screenshots/Streamlit_Deployed_Page_Including_LLM.png)
-
-### Neo4j Aura — Graph Explorer (830 nodes)
-![Aura Explore](screenshots/aura_Explore_Tool.png)
-
-### Neo4j Aura — Query Tool (1,066 nodes · 1,829 relationships)
-![Aura Query](screenshots/aura_Query_Tool.png)
-
-### Neo4j Aura — Dashboard
-![Aura Dashboard](screenshots/aura_Dashboards_Tool.png)
+- [Streamlit Chat UI](screenshots/Streamlit_Deployed_Page_Including_LLM.png)
+- [Neo4j Aura — Graph Explorer (830 nodes)](screenshots/aura_Explore_Tool.png)
+- [Neo4j Aura — Query Tool (1,066 nodes · 1,829 relationships)](screenshots/aura_Query_Tool.png)
+- [Neo4j Aura — Dashboard](screenshots/aura_Dashboards_Tool.png)
 
 ---
 
