@@ -1,5 +1,21 @@
 # DepGraph Agent — Hackathon Submission
 
+## Screenshots
+
+### Agent in action — Streamlit UI
+![Streamlit UI](screenshots/Streamlit_Deployed_Page_Including_LLM.png)
+
+### Knowledge graph in Neo4j Aura Explore (830 nodes)
+![Aura Explore](screenshots/aura_Explore_Tool.png)
+
+### Graph schema in Aura Query Tool — 1,066 nodes · 1,829 relationships
+![Aura Query](screenshots/aura_Query_Tool.png)
+
+### Vulnerability timeline in Aura Dashboard
+![Aura Dashboard](screenshots/aura_Dashboards_Tool.png)
+
+---
+
 ## What it does
 
 DepGraph Agent turns your PyPI dependency tree into a knowledge graph that reasons about supply chain security. It answers questions no health app — sorry, no *security tool* — can: "What's the blast radius of werkzeug?" "Why is my app exposed to this CVE?" "How does a vulnerability in a low-level library propagate up through 4 hops to my top-level packages?"
