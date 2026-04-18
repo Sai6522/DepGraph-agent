@@ -1,33 +1,56 @@
 """
 DepGraph Agent — OSV vulnerability propagation agent.
-LLM: Gemini 2.0 Flash (VertexAI)
-Embeddings: text-embedding-005 (VertexAI)
+LLM + Embeddings: Google Gemini API (free tier via AI Studio)
+  - LLM:        gemini-2.0-flash
+  - Embeddings: text-embedding-004 (768 dims)
 
-Tools:
-  1. cypher_template   — direct vuln lookup + blast-radius traversal (fixed patterns)
-  2. text2cypher       — ad-hoc graph queries (fallback)
-  3. similarity_search — find vulns by semantic description
+Get a free API key (no credit card): https://aistudio.google.com/apikey
 """
 
 import os
 import re
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from neo4j_graphrag.llm import OllamaLLM
-from neo4j_graphrag.embeddings import OllamaEmbeddings
+import google.generativeai as genai
+from neo4j_graphrag.llm import LLMInterface, LLMResponse
+from neo4j_graphrag.embeddings.base import Embedder
 from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
 
 load_dotenv()
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+
+# ── custom LLM wrapper for Gemini AI Studio ───────────────────────────────────
+class GeminiLLM(LLMInterface):
+    def __init__(self, model_name: str = "gemini-2.0-flash"):
+        super().__init__(model_name)
+        self._model = genai.GenerativeModel(model_name)
+
+    def invoke(self, input: str, **kwargs) -> LLMResponse:
+        response = self._model.generate_content(input)
+        return LLMResponse(content=response.text)
+
+    async def ainvoke(self, input: str, **kwargs) -> LLMResponse:
+        return self.invoke(input)
+
+
+# ── custom embedder wrapper for Gemini AI Studio ──────────────────────────────
+class GeminiEmbedder(Embedder):
+    def __init__(self, model: str = "models/text-embedding-004"):
+        self.model = model
+
+    def embed_query(self, text: str) -> list[float]:
+        result = genai.embed_content(model=self.model, content=text[:2000])
+        return result["embedding"]
+
 
 # ── connections ───────────────────────────────────────────────────────────────
 driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-llm = OllamaLLM(model_name="llama3.2", host=OLLAMA_HOST)
-embedder = OllamaEmbeddings(model="nomic-embed-text", ollama_host=OLLAMA_HOST)
+llm = GeminiLLM()
+embedder = GeminiEmbedder()
 
 # ── system prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are DepGraph, a software supply chain security assistant.
@@ -130,8 +153,7 @@ _t2c = Text2CypherRetriever(
         Node labels: Package, Vulnerability
         Relationships: (Package)-[:DEPENDS_ON]->(Package), (Package)-[:HAS_VULNERABILITY]->(Vulnerability)
         Package properties: name (string), version (string), summary (string)
-        Vulnerability properties: id (string, e.g. GHSA-xxxx or CVE-xxxx),
-                                  summary (string), severity (string), published (string)
+        Vulnerability properties: id (string), summary (string), severity (string), published (string)
         Severity values: CRITICAL, HIGH, MODERATE, LOW, UNKNOWN
     """,
 )
@@ -200,5 +222,4 @@ def ask(question: str) -> str:
         f"Graph data:\n{context}\n\n"
         f"Question: {question}\n\nAnswer:"
     )
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.invoke(prompt).content

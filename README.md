@@ -80,19 +80,15 @@ In [console.neo4j.io](https://console.neo4j.io) → Organization Settings:
 - Security → **Tool authentication** ON
 - Confirm your project role is **Project Admin**
 
-### 2. Install Ollama and pull models (free, local)
+### 2. Get a free Gemini API key
 
-```bash
-# Install Ollama: https://ollama.com/download
-ollama pull llama3.2          # LLM (~2GB)
-ollama pull nomic-embed-text  # embeddings (~274MB)
-```
+Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) → **Create API key** — no credit card required.
 
 ### 3. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # only Neo4j credentials needed, no API keys
+cp .env.example .env   # add your Neo4j credentials + GEMINI_API_KEY
 ```
 
 ### 3. Fetch data
@@ -139,9 +135,9 @@ depgraph/
 
 - **Neo4j Aura Free** — managed graph database
 - **neo4j-graphrag** — Text2Cypher + VectorRetriever
-- **Ollama** — local, free, no API key required
-  - `llama3.2` — LLM for answer synthesis and Text2Cypher
-  - `nomic-embed-text` — 768-dim embeddings for vulnerability similarity search
+- **Google Gemini API (free tier)** — no credit card, get key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+  - `gemini-2.0-flash` — LLM for answer synthesis and Text2Cypher
+  - `text-embedding-004` — 768-dim embeddings for vulnerability similarity search
 - **OSV API** — real-world vulnerability data
 - **PyPI API** — live dependency graph
 - **Streamlit** — chat UI

@@ -1,5 +1,6 @@
 neo4j-graphrag
 neo4j
+google-generativeai
 requests
 streamlit
 python-dotenv

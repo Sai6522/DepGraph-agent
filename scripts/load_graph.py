@@ -8,23 +8,23 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from neo4j_graphrag.embeddings import OllamaEmbeddings
+import google.generativeai as genai
 
 load_dotenv()
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-embedder = OllamaEmbeddings(model="nomic-embed-text", ollama_host=OLLAMA_HOST)
 
 
 def get_embedding(text: str) -> list[float]:
-    return embedder.embed_query(text[:2000])
+    result = genai.embed_content(model="models/text-embedding-004", content=text[:2000])
+    return result["embedding"]
 
 
 def setup_schema(session):
