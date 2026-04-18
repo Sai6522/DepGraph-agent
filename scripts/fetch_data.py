@@ -63,13 +63,6 @@ def fetch_osv_vulns(package: str) -> list[dict]:
             return []
         vulns = []
         for v in r.json().get("vulns", []):
-            severity = "UNKNOWN"
-            for s in v.get("severity", []):
-                if s.get("type") == "CVSS_V3":
-                    score = float(s["score"].split("/")[0].replace("CVSS:3.1/AV:", "").split(":")[0] or 0)
-                    # parse CVSS base score from database_specific if available
-                    break
-            # simpler: use database_specific.severity if present
             db = v.get("database_specific", {})
             severity = db.get("severity", "UNKNOWN").upper()
 

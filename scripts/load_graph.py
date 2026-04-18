@@ -23,8 +23,19 @@ driver = GraphDatabase.driver(
 
 
 def get_embedding(text: str) -> list[float]:
-    result = genai.embed_content(model="models/text-embedding-004", content=text[:2000])
-    return result["embedding"]
+    import time
+    for attempt in range(5):
+        try:
+            result = genai.embed_content(model="models/gemini-embedding-001", content=text[:2000])
+            return result["embedding"]
+        except Exception as e:
+            if "429" in str(e) or "ResourceExhausted" in type(e).__name__:
+                wait = 15 * (attempt + 1)
+                print(f"  Rate limited, waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("Embedding failed after retries")
 
 
 def setup_schema(session):
@@ -33,57 +44,64 @@ def setup_schema(session):
     session.run("""
         CREATE VECTOR INDEX vuln_embeddings IF NOT EXISTS
         FOR (v:Vulnerability) ON (v.embedding)
-        OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}
+        OPTIONS {indexConfig: {`vector.dimensions`: 3072, `vector.similarity_function`: 'cosine'}}
     """)
 
 
-def load_packages(session, packages: dict):
+def load_packages(packages: dict):
     print("Loading packages and DEPENDS_ON relationships...")
     for pkg, info in packages.items():
-        session.run(
-            """
-            MERGE (p:Package {name: $name})
-            SET p.version = $version, p.summary = $summary
-            """,
-            name=info["name"], version=info["version"], summary=info["summary"],
-        )
-    # Load edges separately (both nodes must exist first)
+        with driver.session() as s:
+            s.run(
+                "MERGE (p:Package {name: $name}) SET p.version = $version, p.summary = $summary",
+                name=info["name"], version=info["version"], summary=info["summary"],
+            )
     for pkg, info in packages.items():
         for dep in info["requires"]:
             if dep in packages:
-                session.run(
-                    """
-                    MATCH (a:Package {name: $from}), (b:Package {name: $to})
-                    MERGE (a)-[:DEPENDS_ON]->(b)
-                    """,
-                    **{"from": info["name"], "to": dep},
-                )
+                with driver.session() as s:
+                    s.run(
+                        "MATCH (a:Package {name: $from}), (b:Package {name: $to}) MERGE (a)-[:DEPENDS_ON]->(b)",
+                        **{"from": info["name"], "to": dep},
+                    )
 
 
-def load_vulnerabilities(session, vulnerabilities: dict):
+def load_vulnerabilities(vulnerabilities: dict):
     print("Loading vulnerabilities + embeddings...")
+    # Get already-loaded vuln IDs to resume safely
+    with driver.session() as s:
+        existing = {r["id"] for r in s.run("MATCH (v:Vulnerability) WHERE v.embedding IS NOT NULL RETURN v.id AS id")}
+    print(f"  Skipping {len(existing)} already-embedded vulns...")
+    total = sum(len(v) for v in vulnerabilities.values())
+    done = 0
     for pkg, vulns in vulnerabilities.items():
         for v in vulns:
+            done += 1
+            if v["id"] in existing:
+                continue
             text = f"{v['id']}: {v['summary']}"
             embedding = get_embedding(text)
-            session.run(
-                """
-                MERGE (v:Vulnerability {id: $id})
-                SET v.summary = $summary,
-                    v.severity = $severity,
-                    v.published = $published,
-                    v.embedding = $embedding
-                WITH v
-                MATCH (p:Package {name: $pkg})
-                MERGE (p)-[:HAS_VULNERABILITY]->(v)
-                """,
-                id=v["id"],
-                summary=v["summary"],
-                severity=v["severity"],
-                published=v["published"],
-                embedding=embedding,
-                pkg=pkg,
-            )
+            with driver.session() as s:
+                s.run(
+                    """
+                    MERGE (v:Vulnerability {id: $id})
+                    SET v.summary = $summary,
+                        v.severity = $severity,
+                        v.published = $published,
+                        v.embedding = $embedding
+                    WITH v
+                    MATCH (p:Package {name: $pkg})
+                    MERGE (p)-[:HAS_VULNERABILITY]->(v)
+                    """,
+                    id=v["id"],
+                    summary=v["summary"],
+                    severity=v["severity"],
+                    published=v["published"],
+                    embedding=embedding,
+                    pkg=pkg,
+                )
+            if done % 50 == 0:
+                print(f"  {done}/{total} vulns processed...")
 
 
 def main():
@@ -93,8 +111,8 @@ def main():
     print(f"Loading {len(packages)} packages, {sum(len(v) for v in vulnerabilities.values())} vulns...")
     with driver.session() as session:
         setup_schema(session)
-        load_packages(session, packages)
-        load_vulnerabilities(session, vulnerabilities)
+    load_packages(packages)
+    load_vulnerabilities(vulnerabilities)
 
     print("Done! Graph loaded into Neo4j Aura.")
     driver.close()

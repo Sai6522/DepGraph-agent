@@ -12,6 +12,7 @@ import re
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 import google.generativeai as genai
+from groq import Groq
 from neo4j_graphrag.llm import LLMInterface, LLMResponse
 from neo4j_graphrag.embeddings.base import Embedder
 from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
@@ -19,16 +20,20 @@ from neo4j_graphrag.retrievers import Text2CypherRetriever, VectorRetriever
 load_dotenv()
 
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+_groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-# ── custom LLM wrapper for Gemini AI Studio ───────────────────────────────────
-class GeminiLLM(LLMInterface):
-    def __init__(self, model_name: str = "gemini-2.0-flash"):
+# ── Groq LLM wrapper ──────────────────────────────────────────────────────────
+class GroqLLM(LLMInterface):
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile"):
         super().__init__(model_name)
-        self._model = genai.GenerativeModel(model_name)
+        self.model_name = model_name
 
     def invoke(self, input: str, **kwargs) -> LLMResponse:
-        response = self._model.generate_content(input)
-        return LLMResponse(content=response.text)
+        response = _groq_client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": input}],
+        )
+        return LLMResponse(content=response.choices[0].message.content)
 
     async def ainvoke(self, input: str, **kwargs) -> LLMResponse:
         return self.invoke(input)
@@ -36,7 +41,7 @@ class GeminiLLM(LLMInterface):
 
 # ── custom embedder wrapper for Gemini AI Studio ──────────────────────────────
 class GeminiEmbedder(Embedder):
-    def __init__(self, model: str = "models/text-embedding-004"):
+    def __init__(self, model: str = "models/gemini-embedding-001"):
         self.model = model
 
     def embed_query(self, text: str) -> list[float]:
@@ -49,7 +54,7 @@ driver = GraphDatabase.driver(
     os.environ["NEO4J_URI"],
     auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
 )
-llm = GeminiLLM()
+llm = GroqLLM()
 embedder = GeminiEmbedder()
 
 # ── system prompt ─────────────────────────────────────────────────────────────
